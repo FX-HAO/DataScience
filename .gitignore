@@ -2,3 +2,6 @@ __pycache__
 .vscode/
 
 registrations20190924-24636-8a9jza.csv
+seg_pred
+seg_test
+seg_train
