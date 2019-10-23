@@ -11,6 +11,7 @@ from keras.models import Sequential,Input,Model
 from keras.layers import Dense, Dropout, Flatten, Conv2D, MaxPooling2D
 from keras.layers.normalization import BatchNormalization
 from keras.layers.advanced_activations import LeakyReLU
+from keras.applications.resnet50 import ResNet50
 from sklearn.preprocessing import LabelEncoder
 from sklearn.model_selection import train_test_split
 
@@ -27,8 +28,8 @@ def load_data(path):
                 continue
 
             i += 1
-            img_array = np.array(load_img(path + category + '/' + file, grayscale=True))
-            if img_array.shape == (150, 150):
+            img_array = img_to_array(load_img(path + category + '/' + file))
+            if img_array.shape == (150, 150, 3):
                 X.append(img_array)
                 Y.append(category)
                 if i % 100 == 0:
@@ -48,8 +49,8 @@ encoder.fit(Y_train)
 Y_train = encoder.transform(Y_train)
 Y_test = encoder.transform(Y_test)
 
-X_train = X_train.reshape(-1, 150, 150, 1)
-X_test = X_test.reshape(-1, 150, 150, 1)
+X_train = X_train.reshape(-1, 150, 150, 3)
+X_test = X_test.reshape(-1, 150, 150, 3)
 
 X_train = X_train.astype('float32')
 X_test = X_test.astype('float32')
@@ -68,28 +69,37 @@ batch_size = 64
 epochs = 10
 num_classes = 6
 
+res_conv = ResNet50(include_top=False,
+                    weights='imagenet',
+                    input_tensor=None,
+                    input_shape=(150,150,3),
+                    pooling=None,classes=1000)
+
 fashion_model = Sequential()
-fashion_model.add(Conv2D(32, kernel_size=(3, 3),activation='linear',padding='same',input_shape=(150,150,1)))
+fashion_model.add(res_conv)
+fashion_model.add(Conv2D(32, kernel_size=(3, 3),activation='relu',padding='same',input_shape=(150,150,3)))
 fashion_model.add(LeakyReLU(alpha=0.1))
 fashion_model.add(MaxPooling2D((2, 2),padding='same'))
 fashion_model.add(Dropout(0.25))
-fashion_model.add(Conv2D(64, (3, 3), activation='linear',padding='same'))
+fashion_model.add(Conv2D(64, (3, 3), activation='relu',padding='same'))
 fashion_model.add(LeakyReLU(alpha=0.1))
 fashion_model.add(MaxPooling2D(pool_size=(2, 2),padding='same'))
 fashion_model.add(Dropout(0.25))
-fashion_model.add(Conv2D(128, (3, 3), activation='linear',padding='same'))
-fashion_model.add(LeakyReLU(alpha=0.1))                  
+fashion_model.add(Conv2D(128, (3, 3), activation='relu',padding='same'))
+fashion_model.add(LeakyReLU(alpha=0.1))
 fashion_model.add(MaxPooling2D(pool_size=(2, 2),padding='same'))
 fashion_model.add(Dropout(0.4))
 fashion_model.add(Flatten())
-fashion_model.add(Dense(128, activation='linear'))
-fashion_model.add(LeakyReLU(alpha=0.1))           
+fashion_model.add(Dense(256, activation='relu'))
+fashion_model.add(LeakyReLU(alpha=0.1))   
 fashion_model.add(Dropout(0.3))
 fashion_model.add(Dense(num_classes, activation='softmax'))
 
 fashion_model.compile(loss=keras.losses.categorical_crossentropy, optimizer=keras.optimizers.Adam(),metrics=['accuracy'])
+early = keras.callbacks.EarlyStopping(monitor='val_loss', min_delta=0.05, patience=4, mode='auto')
+# reduce = keras.callbacks.ReduceLROnPlateau(monitor='val_loss', factor=0.1, patience=3, mode='auto')
 
-fashion_train = fashion_model.fit(X_train, label_train, batch_size=batch_size,epochs=epochs,verbose=1,validation_data=(X_valid, label_valid))
+fashion_train = fashion_model.fit(X_train, label_train, batch_size=batch_size,epochs=epochs,verbose=1,validation_data=(X_valid, label_valid), callbacks=[early])
 
 test_eval = fashion_model.evaluate(X_test, Y_test_one_hot, verbose=0)
 print('Test loss:', test_eval[0])
@@ -107,16 +117,27 @@ val_accuracy = fashion_train.history['val_accuracy']
 loss = fashion_train.history['loss']
 val_loss = fashion_train.history['val_loss']
 epochs = range(len(accuracy))
+
 plt.figure()
-plt.plot(epochs, accuracy, 'bo', label='Training accuracy')
-plt.plot(epochs, val_accuracy, 'b', label='Validation accuracy')
-plt.title('Training and validation accuracy')
+plt.plot(epochs,accuracy,'b',label='Training Accuracy')
+plt.plot(epochs,val_accuracy,'r',label='Validation Accuracy')
 plt.legend()
+
 plt.figure()
-plt.plot(epochs, loss, 'bo', label='Training loss')
-plt.plot(epochs, val_loss, 'b', label='Validation loss')
-plt.title('Training and validation loss')
+plt.plot(epochs,loss,'b',label='Training Loss')
+plt.plot(epochs,val_loss,'r',label='Validation Loss')
 plt.legend()
+
+# plt.figure()
+# plt.plot(epochs, accuracy, 'bo', label='Training accuracy')
+# plt.plot(epochs, val_accuracy, 'b', label='Validation accuracy')
+# plt.title('Training and validation accuracy')
+# plt.legend()
+# plt.figure()
+# plt.plot(epochs, loss, 'bo', label='Training loss')
+# plt.plot(epochs, val_loss, 'b', label='Validation loss')
+# plt.title('Training and validation loss')
+# plt.legend()
 
 
 # predict test
@@ -128,7 +149,7 @@ print("Found %d correct labels" % len(correct))
 plt.figure()
 for i, correct in enumerate(correct[:9]):
     plt.subplot(3,3,i+1)
-    plt.imshow(X_test[correct].reshape(150, 150), cmap='gray', interpolation='none')
+    plt.imshow(X_test[correct], interpolation='none')
     plt.title("Predicted {}, Class {}".format(predicted_classes[correct], Y_test[correct]))
     plt.tight_layout()
 
@@ -137,7 +158,7 @@ print("Found %d incorrect labels" % len(incorrect))
 plt.figure()
 for i, incorrect in enumerate(incorrect[:9]):
     plt.subplot(3,3,i+1)
-    plt.imshow(X_test[incorrect].reshape(150, 150), cmap='gray', interpolation='none')
+    plt.imshow(X_test[incorrect], interpolation='none')
     plt.title("Predicted {}, Class {}".format(predicted_classes[incorrect], Y_test[incorrect]))
     plt.tight_layout()
 
